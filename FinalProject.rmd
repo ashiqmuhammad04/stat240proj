@@ -1,0 +1,246 @@
+---
+title: "Analysis of Offensive Traits in Premier League Soccer Players: Which is Most Important?"
+group members: "Rishi Agrawal, Muhammad Ashiq, Arthur Hu, Jianle Wang, Minruihang Zhang"
+output: 
+  html_document:
+    df_print: paged
+date: "2022-12-12"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message=FALSE, fig.height = 4)
+library(tidyverse)
+library(lubridate)
+library(scales)
+library(modelr)
+source("../scripts/viridis.R")
+source("../scripts/ggprob.R")
+```
+
+```{r, include=FALSE}
+soccer = read_csv("dataset - 2020-09-24.csv")
+```
+
+## Introduction
+
+We chose to focus on soccer because a majority of us follow the sport with a passion. The dataset we found also provides us with plenty of data to analyze in order to answer our question of interest. We chose to narrow down our focus to only a single aspect of the sport. We will be exploring data from strikers/forwards (synonymous terms for the main offensive position), and seeing how a variety of statistics are linked to goals these strikers scored throughout their career. 
+
+Our question of interest analyzes which offensive feature of a premier league player contributes to them scoring goals the most, thus seeing which offensive feature is most important for a professional striker/forward. As such, we are analyzing various features of Premier League (professional) players to see which offensive features prove most conducive to a professional soccer team's success in terms of their individual players. We propose that assists are the best indicator of a forward/striker's offensive capability, as they are correlated highest with goals scored.
+
+## Data
+
+The Premier League is the highest-level and most prestigious professional men's football league in England. The players in the Premier League are considered among the best, if not the best, in the world. The dataset is a compilation of statistics for each active Premier League player from the time they joined the Premier League to time of data collection (September 24th, 2020). The dataset thus has data from the time the longest-serving active player in the Premier League, Seámus Coleman, joined (January 31st, 2009) to time of data collection (September 24th, 2020). Thus, although the Premier League was founded on May 27th, 1992 the dataset does not contain data from before January 31st, 2009. This data was collected using the BeautifulSoup Python package, scraping web data from the official Premier League website: https://www.premierleague.com/. This scraping was done by Kaggle user Rishikesh Kanabar. A link to the dataset can be found at this link: https://www.kaggle.com/datasets/rishikeshkanabar/premier-league-player-statistics-updated-daily/code
+
+The four key variables we decided to be conducive to scoring goals for a striker, so a successful player with good offense, are passes, shooting accuracy, assists, and big chances created. 
+
+> Key Variables
+
+```{r, echo=FALSE}
+tribble(~"Key Variables", ~"DataType", ~"Description", 
+        "Name", "str", "The name of each player.", 
+        "Position", "str", "The responsibility that players take in games.",
+         "Goals", "int", "Goals scored by a player throughout their career in the Premier League.",
+        "Assists", "int", "Passes that players have completed successfully that result in a goal throughout their career in the Premier League.",
+        "Pass", "int", "The number of times a player has successfully given the ball to another player throughout their career in the Premier League.",
+        "Big chances created", "int", "The total number of times a player has created a big chance opportunity for other teammates to score.",
+        "Shooting accuracy", "str", "Percentage of shots successfully scored."
+       )
+```
+
+
+### Exploratory Plots and Summaries
+
+> Distribution of Goals Scored for Forwards/Strikers Grouped by Team
+
+```{r, echo=FALSE}
+Forwards_clubs = soccer %>%
+  filter(Position == "Forward") %>%
+  group_by(Club) %>%
+  summarise(Goals = sum(Goals))
+Forwards_clubs
+```
+
+```{r, echo=FALSE}
+ggplot(Forwards_clubs, aes(x = Goals, y = Club, fill = Club)) +
+  geom_col() +
+  xlab("Goals Scored for Each Club")+
+  ggtitle("Goals Scored for Premier League Clubs")
+```
+
+```{r, echo = FALSE}
+forwards = soccer %>%
+  filter(Position == "Forward") %>%
+  mutate(Shooting_accuracy = as.numeric(sub("%", "",`Shooting accuracy %`,fixed=TRUE))/100) %>% 
+    summarise(Name, Goals, Passes, Assists, Shooting_accuracy, Big_chances_created = `Big chances created`) %>%
+  arrange(desc(Goals))
+forwards
+```
+
+> Distribution of Goals Scored for All Forwards
+
+```{r, echo = FALSE}
+goals_distribution = ggplot(forwards) + 
+  geom_density(aes(x = Goals), color = "darkblue", fill = "lightblue") + 
+  ggtitle("Distribution of Goals Scored")
+goals_distribution
+```
+
+
+> Distributions of Passes, Assists, Shooting Accuracy, and Big Chances Created
+
+```{r, echo = FALSE}
+distrib_passes = ggplot(forwards) + 
+  geom_density(aes(x = Passes), color = "black", fill = "#800808")  +
+  ggtitle("Distribution of Passes")
+distrib_passes
+
+distrib_assists = ggplot(forwards) + 
+  geom_density(aes(x = Assists), color = "black", fill = "#00827F") + 
+  ggtitle("Distribution of Assists")
+distrib_assists
+
+distrib_shooting_accuracy = ggplot(forwards) + 
+  geom_density(aes(x = Shooting_accuracy), color = "black", fill = "#48BF91") + 
+  ggtitle("Distribution of Shooting Accuracy") +
+  xlab("Shooting Accuracy") 
+distrib_shooting_accuracy
+
+distrib_big_chances_created = ggplot(forwards) + 
+  geom_density(aes(x = Big_chances_created),color = "black", fill = "grey") + 
+  ggtitle("Distribution of Big Chances Created") +
+  xlab("Big Chances Created")
+distrib_big_chances_created
+```
+
+
+## Analysis
+
+We will use multiple linear regression to answer our question. 
+
+For our question, we want to see which of four offensive features is most conducive to a player's offensive capabilities (most positively correlated with goals scored) for all premier players in our dataset's season. These offensive features include passes, shooting accuracy, assists, and big chances created. We will look at only strikers. If we were to include other offensive positions, there would be too much confusion. As such, each data point in our scatter will represent a striker in our dataset. For each regression in the multiple linear regression, our response variable will be goals scored, and our explanatory variable will be each respective offensive feature. That way, we can see how strongly positively correlated each offensive feature is with goals scored. We are trying to see which offensive feature has the highest positive correlation, as we are trying to maximize the amount of goals scored to see offensive strength. Our steps will be as follows: filter out all players that aren't strikers, then perform multiple linear regression by selecting goals scored and our other necessary columns, plotting all the strikers, and then performing linear regression, finding all parameters and drawing lines of best fit. Then, we can compare each correlation coefficient and draw conclusions.
+
+```{r, echo=FALSE, results='hide'}
+offensive_feature = soccer %>%
+  filter(Position == "Forward") %>%
+  select(Name, Passes, `Shooting accuracy %`, Assists, `Big chances created`, Goals) %>%
+  mutate(Shooting_accuracy = as.numeric(sub("%", "",`Shooting accuracy %`,fixed=TRUE))/100)
+
+pass_lm = lm(Goals ~ Passes, data = offensive_feature)
+shoot_lm = lm(Goals ~ Passes+Shooting_accuracy, data = offensive_feature)
+assist_lm = lm(Goals ~ Passes+Shooting_accuracy+Assists, data = offensive_feature)
+bigchance_lm = lm(Goals ~ Passes+Shooting_accuracy+Assists+`Big chances created`, data = offensive_feature)
+
+offensive_feature = offensive_feature %>%
+  mutate(p_resi = resid(pass_lm),
+         s_resi = resid(shoot_lm),
+         a_resi = resid(assist_lm),
+         b_resi = resid(bigchance_lm))
+```
+
+```{r, echo = FALSE, include = FALSE}
+# Multiple correlation (ask TA about this)
+summary(bigchance_lm)
+cor(offensive_feature$Passes, offensive_feature$Goals)
+cor(offensive_feature$Shooting_accuracy, offensive_feature$Goals)
+cor(offensive_feature$Assists, offensive_feature$Goals)
+cor(offensive_feature$`Big chances created`, offensive_feature$Goals)
+```
+
+$$
+\hat{Goals\;Scored} = {-3.003} + {.001}(Passes) + {16.571}(Shooting\;Accuracy)\\ + {1.884}(Assists) + {.118}(Big\;Chances\;Created) 
+$$
+
+$$
+Shooting\;Accuracy\;Correlation = .3777,\\
+Passes\; Correlation = .8033,\\
+Assists\;Correlation = .8496,\\
+Big\;Chances\;Created\;Correlation = .8298
+$$
+
+```{r, echo=FALSE}
+ggplot(offensive_feature, aes(x = Passes, y = Goals)) +
+  geom_point() +
+  geom_smooth(se = F, method = "lm") +
+  ggtitle("Relationship of Passes and Goals")
+```
+
+```{r, echo=FALSE}
+ggplot(offensive_feature, aes(x = Shooting_accuracy, y = Goals)) +
+  geom_point() +
+  geom_smooth(se = F, method = "lm") + xlab("Shooting Accuracy") + 
+  ggtitle("Relationship of Shooting Accuracy and Goals")
+```
+
+```{r, echo=FALSE}
+ggplot(offensive_feature, aes(x = Assists, y = Goals)) +
+  geom_point() +
+  geom_smooth(se = F, method = "lm") +
+  ggtitle("Relationship of Assists and Goals")
+```
+
+```{r, echo=FALSE}
+ggplot(offensive_feature, aes(x = `Big chances created`, y = Goals)) +
+  geom_point() + xlab("Big Chances Created") + 
+  geom_smooth(se = F, method = "lm") +
+  ggtitle("Relationship of Big Chances Created and Goals")
+```
+
+```{r, echo=FALSE}
+ggplot(offensive_feature, aes(x = Passes, y = p_resi)) +
+  geom_point() +
+  geom_smooth(se = F) +
+  geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
+  ylab("Residuals") +
+  ggtitle("Residual Plot of Passes and Goals")
+```
+
+```{r, echo=FALSE}
+ggplot(offensive_feature, aes(x = Shooting_accuracy, y = s_resi)) +
+  geom_point() +
+  geom_smooth(se = F) +
+  geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
+  ylab("Residuals") + xlab("Shooting Accuracy") + 
+  ggtitle("Residual Plot of Shooting Accuracy and Goals")
+```
+
+```{r, echo=FALSE}
+ggplot(offensive_feature, aes(x = Assists, y = a_resi)) +
+  geom_point() +
+  geom_smooth(se = F) +
+  geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
+  ylab("Residuals") +
+  ggtitle("Residual Plot of Assists and Goals")
+```
+
+```{r, echo=FALSE}
+ggplot(offensive_feature, aes(x = `Big chances created`, y = b_resi)) +
+  geom_point() +
+  geom_smooth(se = F) +
+  geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
+  ylab("Residuals") + xlab("Big Chances Created") + 
+  ggtitle("Residual Plot of Big Chances Created and Goals")
+```
+
+## Discussion/Summary
+
+### Understanding the Analysis 
+
+Our question, comparing various key offensive features to goals scored by players, demonstrates which offensive features players should focus on, and which offensive features a premier league club should look for. This question has business implications, as teams can use the variable found to decide whether or not they want to spend money contracting a player to their club. We are using only strikers/forwards (two names for the same position), as using other offensive positions would cause confusion.
+
+The linear regressions all seem to be appropriately fitted to a linear model by the random, pattern-less scatter present in their respective residual plots. As shown above, the model with the highest correlation coefficient is goals scored vs. assists. This means that if one were to look at a statistic besides the raw count of goals scored by a forward throughout their career, they could see that the amount of assists successfully completed by a forward is highly correlated with the amount of goals scored. 
+
+This means that if one was in the position of team manager for their soccer club, they would be best off selecting a striker that had high assists. Passes and big chances created also have especially high correlation coefficients. Shooting accuracy, however, is not as strongly correlated. Overall, we can conclude that assists especially, but also passes and big chances should take precedence over shooting accuracy when contracting a striker.  
+
+### Potential Shortcomings
+
+The key potential shortcoming in our analysis include factors that we cannot control when using our data. For example, a striker in our data set may have, due to Premier League matchmaking, played against very easy teams. As such, they scored many goals against poor players. The data would thus be slightly skewed to this person's style of play. We thus assume that Premier League matchmaking forces the best strikers to work for their goals. Furthermore, we only use strikers/forwards in our analysis. They are, by far, the position that scores the most goals. However, other positions are able to score goals as well. Because of this, we are missing much data in our analysis. Additionally, we only have data from after January 2009. Although it may be better to derive conclusions from contemporary data, it may have been better to have had all data in Premier League history. We also only have data from before September 2020. We assume, however, that the state of Premier League soccer has not changed much in the past two years. 
+
+### Looking to the Future 
+
+In the future, we would like to conduct a similar analysis for defenders as well. If we could find some other metric of success for a defender besides goals conceded (conceding a goal cannot be attached to a single defender, and as such performing linear regression proves difficult), we could conduct such an analysis. Then, a club manager would have a cohesive understanding when hiring both offensive and defensive players. Conducting a similar study on midfielders and goalkeepers may be possible as well, albeit with different metrics of success. 
+
+
+
+
+
+
